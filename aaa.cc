@@ -111,9 +111,9 @@ std::vector<CompResult> remove_repeat_n(char *seq, int *len) {
 #define DEBUG
 
 #ifdef DEBUG
-
-char buf11[1000000];
-char buf22[1000000];
+const int kBufSize = 1000000;
+char buf11[kBufSize];
+char buf22[kBufSize];
 
 void fake_decode_seg(u16 key, char *seg) {
   u16 mask = 3;  // 0000000000000011
@@ -141,7 +141,6 @@ void fake_decode_seg(u16 key, char *seg) {
 void fake_decompress(int *len, std::vector<CompResult> &results) {
   char seg[kSegLen];
   char *buf1 = buf11, *buf2 = buf22;
-  memcpy(buf2, buf1, *len);
   for (int i = results.size() - 1; i >= 0; i--) {
     CompResult &result = results[i];
     u16 key;
@@ -149,7 +148,7 @@ void fake_decompress(int *len, std::vector<CompResult> &results) {
     std::tie(key, locs) = std::move(result);
     fake_decode_seg(key, seg);
     char *p = buf1, *q = buf2;
-    int prev_loc = -kSegLen;
+    int prev_loc = 0;
     for (int loc : locs) {
       int cp_len = loc - prev_loc - kSegLen;
       memcpy(q, p, cp_len);
@@ -159,9 +158,8 @@ void fake_decompress(int *len, std::vector<CompResult> &results) {
       q += kSegLen;
       prev_loc = loc;
     }
-    memcpy(q, p, *len - prev_loc);
-    // printf("%s\n", buf2);
     *len += locs.size() * kSegLen;
+    memcpy(q, p, *len - prev_loc - kSegLen);
     std::swap(buf1, buf2);
   }
   if (results.size() % 2) {
