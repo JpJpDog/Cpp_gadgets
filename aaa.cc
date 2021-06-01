@@ -72,8 +72,8 @@ static std::tuple<u16, std::vector<int>> find_most_freq(char *seq, int len) {
                                [](const SegPair &p1, const SegPair &p2) {
                                  return p1.second.size() < p2.second.size();
                                });  // 这里用了lamda表达式表示怎么判断最大
-  return std::make_tuple(
-      pair->first, std::move(pair->second));  // 用move移动，减少复制的开销
+  return std::forward_as_tuple(pair->first,
+                               pair->second);  // 用move移动，减少复制的开销
 }
 
 // 根据 `result` ，把 `seq` 的segment中去掉。在原地改变，并改变长度。
@@ -148,7 +148,7 @@ void fake_decompress(int *len, std::vector<CompResult> &results) {
     std::tie(key, locs) = std::move(result);
     fake_decode_seg(key, seg);
     char *p = buf1, *q = buf2;
-    int prev_loc = 0;
+    int prev_loc = -kSegLen;
     for (int loc : locs) {
       int cp_len = loc - prev_loc - kSegLen;
       memcpy(q, p, cp_len);
@@ -159,7 +159,10 @@ void fake_decompress(int *len, std::vector<CompResult> &results) {
       prev_loc = loc;
     }
     *len += locs.size() * kSegLen;
-    memcpy(q, p, *len - prev_loc - kSegLen);
+    int cp_len = *len - prev_loc - kSegLen;
+    memcpy(q, p, cp_len);
+    // buf2[*len] = '\0';
+    // printf("%s\n", buf2);
     std::swap(buf1, buf2);
   }
   if (results.size() % 2) {
@@ -168,7 +171,11 @@ void fake_decompress(int *len, std::vector<CompResult> &results) {
   buf11[*len] = '\0';
 }
 
+char *in_filename = "test.txt";
+char *compress_filename = "comp.txt";
+
 int main() {
+  FILE *in_file = fopen(in_filename, "r");
   scanf("%s", buf11);
   int len = strlen(buf11);
   std::vector<CompResult> results = remove_repeat_n(buf11, &len);
