@@ -1,9 +1,3 @@
-*.txt
 .vscode
-*.out
-aaa.cc
-aaa
-gen.cc
-gen
+test
 compress
-ttt

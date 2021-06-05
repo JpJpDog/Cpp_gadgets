@@ -18,10 +18,9 @@ typedef std::pair<u16, std::vector<int>> SegPair;
 typedef std::unique_lock<std::mutex> MutLock;
 
 const int kThreadN = 8;
-const int kMaxBuf = 8000;
+const int kMaxBuf = 1024 * 1024;
 const int kSegLen = 8;
 const int kFindN = 6;
-int threadN;
 int stage;
 std::mutex stage_mu;
 std::condition_variable stage_cv;
@@ -165,9 +164,6 @@ static void thread_routine(int tid) {
     });
     cur_stage++;
     stage_lck.unlock();
-    if (quit) {
-      int aaa = 1;
-    }
     auto iter = segmap.find(freq_result);
     if (iter != segmap.end()) {
       remove_freq(iter->second, buf, buf_len);
@@ -209,7 +205,7 @@ static void binary_comp(std::ofstream& fout, std::vector<SegPair>& results) {
     }
   }
   int seq_len = 0;
-  std::for_each(bufs_len, bufs_len + threadN,
+  std::for_each(bufs_len, bufs_len + kThreadN,
                 [&seq_len](int len) { seq_len += len; });
   fout << seq_len;
   u8 tt;
@@ -225,7 +221,7 @@ static void binary_comp(std::ofstream& fout, std::vector<SegPair>& results) {
     }
     if (idx == buf_len) {
       buf_idx++;
-      if (buf_idx == threadN) {
+      if (buf_idx == kThreadN) {
         break;
       }
       idx = 0;
@@ -251,22 +247,22 @@ int main(int argc, char** argv) {
     std::cerr << "[error]: cannot find the file.\n";
     return 1;
   }
+  fin.seekg(0, std::ios::end);
+  std::streampos fin_size = fin.tellg();
+  fin.seekg(0, std::ios::beg);
   std::vector<std::thread> threads;
-  threadN = -1;
   int tid;
-  for (tid = 0; tid < kThreadN && threadN == -1; tid++) {
-    threads.push_back(std::thread(thread_routine, tid));
-    if (!fin.read(bufs[tid], kMaxBuf)) {
-      threadN = tid + 1;
-    }
-    bufs_len[tid] = fin.gcount();
-  }
-  fin.close();
-  if (threadN == -1) {
+  int buf_size = fin_size / kThreadN + 1;
+  if (buf_size > kMaxBuf) {
     std::cerr << "[error]: sequence two long. please enlarge the buf.\n";
     return 1;
   }
-
+  for (tid = 0; tid < kThreadN; tid++) {
+    threads.push_back(std::thread(thread_routine, tid));
+    fin.read(bufs[tid], buf_size);
+    bufs_len[tid] = fin.gcount();
+  }
+  fin.close();
   MutLock finishN_lck(finishN_mu);
   std::vector<SegPair> results;
   stage = 0;
@@ -276,11 +272,11 @@ int main(int argc, char** argv) {
     stage++;
     stage_cv.notify_all();
     stage_lck.unlock();
-    finishN_cv.wait(finishN_lck, []() { return finishN >= threadN; });
+    finishN_cv.wait(finishN_lck, []() { return finishN >= kThreadN; });
     std::cout << "[main]: finish " << i << ".\n";
 
     SegMap segmap;
-    for (int tid = 0; tid < threadN; tid++) {
+    for (int tid = 0; tid < kThreadN; tid++) {
       for (auto& result : freqs[tid]) {
         adds_map(segmap, result);
       }
@@ -297,7 +293,7 @@ int main(int argc, char** argv) {
   stage = -1;
   stage_cv.notify_all();
   stage_lck.unlock();
-  finishN_cv.wait(finishN_lck, []() { return finishN >= threadN; });
+  finishN_cv.wait(finishN_lck, []() { return finishN >= kThreadN; });
 
   std::cout << "[main]: finish task!\n";
   finishN_lck.unlock();
@@ -307,6 +303,9 @@ int main(int argc, char** argv) {
   std::string comp_fname = make_comp_filename(in_fname);
   std::ofstream fout(comp_fname);
   binary_comp(fout, results);
+  std::streampos fout_size = fout.tellp();
   fout.close();
+  std::cout << "compress OK! compress rate is " << (double)fout_size / fin_size
+            << "\n";
   return 0;
 }
